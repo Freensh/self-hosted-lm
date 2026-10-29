@@ -1,4 +1,5 @@
-"""Render explicit non-secret deployment variables; fail on missing values."""
+"""Replace ${NAME} placeholders in a manifest with environment values."""
+
 import argparse
 import os
 import re
@@ -6,14 +7,19 @@ from pathlib import Path
 
 
 def render(text, values):
+    """Stop on missing values and require container images pinned by digest."""
+
     def substitute(match):
         key = match[1]
         value = values.get(key, "")
         if not value or "\n" in value or "\r" in value:
             raise ValueError(f"Missing or multiline value: {key}")
-        if key.endswith("_IMAGE") and not re.fullmatch(r"[^\s]+@sha256:[a-f0-9]{64}", value):
+        if key.endswith("_IMAGE") and not re.fullmatch(
+            r"[^\s]+@sha256:[a-f0-9]{64}", value
+        ):
             raise ValueError(f"Pin {key} by digest")
         return value
+
     return re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}", substitute, text)
 
 

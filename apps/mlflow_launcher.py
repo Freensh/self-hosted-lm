@@ -1,3 +1,5 @@
+"""Send signed-in engineers to the SageMaker-managed MLflow UI."""
+
 import os
 import boto3
 from fastapi import FastAPI
@@ -6,9 +8,11 @@ from fastapi.responses import RedirectResponse
 app = FastAPI()
 sagemaker = boto3.client("sagemaker", region_name="us-east-1")
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 @app.get("/")
 def launch():
@@ -18,5 +22,8 @@ def launch():
         ExpiresInSeconds=60,
         SessionExpirationDurationInSeconds=1800,
     )
-    return RedirectResponse(result["AuthorizedUrl"], status_code=303,
-                            headers={"Cache-Control": "no-store"})
+    return RedirectResponse(
+        result["AuthorizedUrl"],
+        status_code=303,
+        headers={"Cache-Control": "no-store"},
+    )

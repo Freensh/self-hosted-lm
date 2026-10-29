@@ -9,10 +9,21 @@ REV = "a" * 40
 
 class IntakeTests(unittest.TestCase):
     def setUp(self):
-        names = ["config.json", "tokenizer_config.json", "tokenizer.json",
-                 "LICENSE", "README.md", "chat_template.jinja", "model.safetensors"]
-        self.info = {"id": REPO, "sha": REV, "cardData": {"license": "apache-2.0"},
-                     "siblings": [{"rfilename": n, "size": 100} for n in names]}
+        names = [
+            "config.json",
+            "tokenizer_config.json",
+            "tokenizer.json",
+            "LICENSE",
+            "README.md",
+            "chat_template.jinja",
+            "model.safetensors",
+        ]
+        self.info = {
+            "id": REPO,
+            "sha": REV,
+            "cardData": {"license": "apache-2.0"},
+            "siblings": [{"rfilename": n, "size": 100} for n in names],
+        }
         self.config = {"model_type": "fixture"}
 
     def build(self):
@@ -36,8 +47,9 @@ class IntakeTests(unittest.TestCase):
             self.build()
 
     def test_missing_tokenizer(self):
-        self.info["siblings"] = [x for x in self.info["siblings"]
-                                 if x["rfilename"] != "tokenizer.json"]
+        self.info["siblings"] = [
+            x for x in self.info["siblings"] if x["rfilename"] != "tokenizer.json"
+        ]
         with self.assertRaisesRegex(ValueError, "Tokenizer"):
             self.build()
 
@@ -65,13 +77,23 @@ class IntakeTests(unittest.TestCase):
             self.build()
 
     def test_collector_requests_only_pinned_metadata(self):
-        payloads = [json.dumps(self.info).encode(), b'{}', b'{}', b'license', b'card']
+        payloads = [json.dumps(self.info).encode(), b"{}", b"{}", b"license", b"card"]
         with patch("model_intake.fetch", side_effect=payloads) as network:
             result = collect(REPO, REV)
         paths = [call.args[0] for call in network.call_args_list]
-        self.assertEqual(paths, [f"/api/models/{REPO}/revision/{REV}?blobs=true"]
-                         + [f"/{REPO}/resolve/{REV}/{name}" for name in
-                            ("config.json", "tokenizer_config.json", "LICENSE", "README.md")])
+        self.assertEqual(
+            paths,
+            [f"/api/models/{REPO}/revision/{REV}?blobs=true"]
+            + [
+                f"/{REPO}/resolve/{REV}/{name}"
+                for name in (
+                    "config.json",
+                    "tokenizer_config.json",
+                    "LICENSE",
+                    "README.md",
+                )
+            ],
+        )
         self.assertEqual(len(result["downloaded_metadata_sha256"]), 5)
         self.assertFalse(result["weights_downloaded"])
 

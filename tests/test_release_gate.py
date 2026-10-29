@@ -24,7 +24,9 @@ class ReleaseGateTests(unittest.TestCase):
         }
 
     def decide(self, evidence=None):
-        return release_decision(self.evidence if evidence is None else evidence, self.expected, NOW)[0]
+        return release_decision(
+            self.evidence if evidence is None else evidence, self.expected, NOW
+        )[0]
 
     def test_complete_matching_evidence_passes(self):
         self.assertTrue(self.decide())

@@ -1,4 +1,5 @@
 """Exercise real local MLflow APIs. This does not test SageMaker or a model."""
+
 import sys
 import tempfile
 from pathlib import Path
@@ -20,15 +21,21 @@ def main():
         assert first.version == 1 and second.version == 2
         assert mlflow.load_prompt(f"prompts:/{first.name}/1").template == first.template
         with mlflow.start_span(name="compatibility", span_type="CHAIN"):
-            with mlflow.start_span(name="synthetic-model-call", span_type="LLM") as span:
+            with mlflow.start_span(
+                name="synthetic-model-call", span_type="LLM"
+            ) as span:
                 span.set_outputs({"synthetic": True})
             with mlflow.start_span(name="synthetic-tool", span_type="TOOL") as span:
                 span.set_outputs({"synthetic": True})
         mlflow.flush_trace_async_logging()
-        traces = mlflow.search_traces(experiment_ids=[experiment.experiment_id], return_type="list")
+        traces = mlflow.search_traces(
+            experiment_ids=[experiment.experiment_id], return_type="list"
+        )
         assert len(traces) == 1 and len(traces[0].data.spans) == 3
         print("PASS: local MLflow prompt versions, loading, and CHAIN/LLM/TOOL spans")
-        print("Scope: local library compatibility only; no SageMaker or inference tested")
+        print(
+            "Scope: local library compatibility only; no SageMaker or inference tested"
+        )
 
 
 if __name__ == "__main__":

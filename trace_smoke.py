@@ -1,12 +1,16 @@
+"""Send a synthetic trace to MLflow. This does not call Astra or Kubernetes."""
+
 import os
 import mlflow
 
 mlflow.set_tracking_uri(os.environ["MLFLOW_TRACKING_ARN"])
 mlflow.set_experiment("carecart-kubernetes-assistant")
 
+
 @mlflow.trace(name="synthetic_kubernetes_tool", span_type="TOOL")
 def read_fixture():
     return {"namespace": "synthetic", "pod": "demo", "status": "Pending"}
+
 
 @mlflow.trace(name="synthetic_assistant_request", span_type="CHAIN")
 def exercise():
@@ -17,6 +21,8 @@ def exercise():
     result = read_fixture()
     return {"answer": f"The demo pod is {result['status']}.", "synthetic": True}
 
-exercise()
-mlflow.flush_trace_async_logging()
-print("Inspect the validation trace and its child spans in MLflow.")
+
+if __name__ == "__main__":
+    exercise()
+    mlflow.flush_trace_async_logging()
+    print("Inspect the validation trace and its child spans in MLflow.")
