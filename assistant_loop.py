@@ -4,20 +4,28 @@ import json
 from contextlib import nullcontext
 
 
+def start_trace(span_factory, name, span_type):
+    """Open an MLflow trace, or do nothing when tracing is disabled."""
+    if span_factory is None:
+        return nullcontext()
+    return span_factory(name=name, span_type=span_type)
+
+
 def run_loop(
     client, tools, dispatch, prompt, question, user, span_factory=None, max_rounds=5
 ):
-    allowed_tools = {tool["function"]["name"] for tool in tools}
+    # dispatch is the application's function for running an approved tool.
+    allowed_tools = []
+    for tool in tools:
+        allowed_tools.append(tool["function"]["name"])
     messages = [
         {"role": "system", "content": prompt},
         {"role": "user", "content": question},
     ]
     tools_used = []
-    # With no MLflow tracer, the same loop runs without recording spans.
-    span_factory = span_factory or (lambda **kwargs: nullcontext(None))
     for round_number in range(max_rounds):
         # 1. Send the conversation to Astra.
-        with span_factory(name="astra_call", span_type="LLM") as span:
+        with start_trace(span_factory, "astra_call", "LLM") as span:
             if span:
                 span.set_inputs({"model": "astra", "round": round_number})
             response = client.chat.completions.create(
@@ -31,12 +39,13 @@ def run_loop(
             )
             message = response.choices[0].message
             if span:
+                token_count = None
+                if response.usage:
+                    token_count = response.usage.total_tokens
                 span.set_outputs(
                     {
                         "has_tool_calls": bool(message.tool_calls),
-                        "tokens": (
-                            response.usage.total_tokens if response.usage else None
-                        ),
+                        "tokens": token_count,
                     }
                 )
         if not message.tool_calls:
@@ -54,7 +63,7 @@ def run_loop(
             arguments = json.loads(call.function.arguments or "{}")
             if not isinstance(arguments, dict):
                 raise ValueError("Tool arguments must be a JSON object")
-            with span_factory(name="tool_call", span_type="TOOL") as span:
+            with start_trace(span_factory, "tool_call", "TOOL") as span:
                 if span:
                     span.set_inputs({"tool": name})
                 result = dispatch(name, arguments)

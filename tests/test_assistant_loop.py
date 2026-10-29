@@ -1,5 +1,7 @@
 import unittest
+from contextlib import nullcontext
 from types import SimpleNamespace as NS
+from unittest.mock import Mock
 from assistant_loop import run_loop
 
 TOOLS = [{"type": "function", "function": {"name": "list_pods"}}]
@@ -40,6 +42,38 @@ def client_for(messages, seen):
 
 
 class AssistantTests(unittest.TestCase):
+    def test_tracing_keeps_model_and_tool_steps(self):
+        spans = []
+
+        def record_span(name, span_type):
+            span = Mock()
+            spans.append((name, span_type, span))
+            return nullcontext(span)
+
+        client = client_for(
+            [Message(name="list_pods"), Message(content="demo is Pending")], []
+        )
+        dispatch = Mock(return_value={"status": "Pending"})
+        result = run_loop(
+            client,
+            TOOLS,
+            dispatch,
+            "Use evidence",
+            "Inspect demo",
+            "test-user",
+            span_factory=record_span,
+        )
+
+        self.assertEqual(result["answer"], "demo is Pending")
+        self.assertEqual(len(spans), 3)
+        self.assertEqual(spans[0][:2], ("astra_call", "LLM"))
+        self.assertEqual(spans[1][:2], ("tool_call", "TOOL"))
+        self.assertEqual(spans[2][:2], ("astra_call", "LLM"))
+        spans[0][2].set_outputs.assert_called_once_with(
+            {"has_tool_calls": True, "tokens": 20}
+        )
+        dispatch.assert_called_once_with("list_pods", {"namespace": "synthetic"})
+
     def test_tool_result_is_returned_to_model(self):
         seen = []
         client = client_for(

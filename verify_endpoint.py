@@ -71,21 +71,26 @@ def main():
     )
     args = parser.parse_args()
     try:
-        key = os.environ[args.key_env] if args.key_env else None
+        key = None
+        if args.key_env:
+            key = os.environ[args.key_env]
         if args.key_env and not key.strip():
             raise ValueError("The key environment variable is empty")
         status, body = request(os.environ["ASTRA_HOST"], key)
         passed = assess(status, body, args.expect)
-        print(
-            json.dumps(
-                {
-                    "check": "endpoint_" + args.expect,
-                    "http_status": status,
-                    "result": "PASS" if passed else "FAIL",
-                }
-            )
-        )
-        return 0 if passed else 1
+        result = "FAIL"
+        if passed:
+            result = "PASS"
+        report = {
+            "check": "endpoint_" + args.expect,
+            "http_status": status,
+            "result": result,
+        }
+        print(json.dumps(report))
+        # Command-line checks return 0 for success and 1 for failure.
+        if passed:
+            return 0
+        return 1
     except (KeyError, ValueError, URLError, OSError):
         print(
             json.dumps(

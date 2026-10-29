@@ -20,6 +20,7 @@ def render(text, values):
             raise ValueError(f"Pin {key} by digest")
         return value
 
+    # For each ${NAME}, re.sub calls substitute to check and insert its value.
     return re.sub(r"\$\{([A-Z][A-Z0-9_]*)\}", substitute, text)
 
 

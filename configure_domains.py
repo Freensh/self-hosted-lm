@@ -22,7 +22,9 @@ DNS = "external-dns.alpha.kubernetes.io/"
 
 
 def command(argv):
-    return subprocess.run(argv, check=True, capture_output=True, text=True).stdout
+    """Run a command and return its text output; stop if it fails."""
+    result = subprocess.run(argv, check=True, capture_output=True, text=True)
+    return result.stdout
 
 
 def read_config(path=None):
@@ -44,7 +46,8 @@ def read_config(path=None):
 
 def catalog():
     """Load each service's namespace, port and route from YAML."""
-    return yaml.safe_load((ROOT / "k8s/edge/services.yaml").read_text(encoding="utf-8"))
+    text = (ROOT / "k8s/edge/services.yaml").read_text(encoding="utf-8")
+    return yaml.safe_load(text)
 
 
 def validate(config):
@@ -106,12 +109,15 @@ def build_ingresses(config, services):
     """Build one HTTPS Ingress per selected service."""
     validate(config)
     routes = catalog()
-    if not services or not set(services) <= set(routes):
+    if not services:
         raise ValueError("Select supported service keys")
-    if set(services) - {"inference"} and not config.get("browser_auth"):
-        raise ValueError(
-            "Set approved browser_auth in terraform.tfvars before publishing browser services"
-        )
+    for service in services:
+        if service not in routes:
+            raise ValueError("Select supported service keys")
+        if service != "inference" and not config.get("browser_auth"):
+            raise ValueError(
+                "Set approved browser_auth in terraform.tfvars before publishing browser services"
+            )
     ingresses = []
     for key in sorted(set(services)):
         route = routes[key]
@@ -131,14 +137,12 @@ def build_ingresses(config, services):
         }
         if key != "inference":
             auth = config["browser_auth"]
+            provider_annotation = ALB + "auth-idp-" + auth["type"]
+            provider_settings = json.dumps(auth["parameters"], separators=(",", ":"))
             annotations.update(
                 {
                     ALB + "auth-type": auth["type"],
-                    ALB
-                    + "auth-idp-"
-                    + auth["type"]: json.dumps(
-                        auth["parameters"], separators=(",", ":")
-                    ),
+                    provider_annotation: provider_settings,
                     ALB + "auth-on-unauthenticated-request": "authenticate",
                     ALB + "auth-session-cookie": "Astra-" + key.replace("_", "-"),
                     ALB + "auth-session-timeout": "1800",
@@ -172,19 +176,17 @@ def render_bundle(config, services, directory):
     ingresses = build_ingresses(config, services)
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    values = {
-        key.upper(): str(config[key])
-        for key in (
-            "domain_name",
-            "zone_id",
-            "cluster_name",
-            "txt_owner_id",
-            "external_dns_role_arn",
-        )
-    }
-    controller = render(
-        (ROOT / "k8s/edge/external-dns.yaml").read_text(encoding="utf-8"), values
-    )
+    values = {}
+    for key in [
+        "domain_name",
+        "zone_id",
+        "cluster_name",
+        "txt_owner_id",
+        "external_dns_role_arn",
+    ]:
+        values[key.upper()] = str(config[key])
+    template = (ROOT / "k8s/edge/external-dns.yaml").read_text(encoding="utf-8")
+    controller = render(template, values)
     (directory / "external-dns.yaml").write_text(controller, encoding="utf-8")
     (directory / "ingresses.yaml").write_text(
         yaml.safe_dump_all(ingresses, sort_keys=False), encoding="utf-8"
@@ -226,13 +228,16 @@ def render_bundle(config, services, directory):
 def assert_context(config, kube_config):
     """Prevent an apply to another cluster or through an unverified connection."""
     clusters = kube_config.get("clusters", [])
-    if len(clusters) != 1 or clusters[0]["cluster"]["server"].rstrip("/") != config[
-        "cluster_endpoint"
-    ].rstrip("/"):
+    if len(clusters) != 1:
+        raise ValueError("Select exactly one Kubernetes cluster")
+    current_cluster = clusters[0]["cluster"]
+    current_endpoint = current_cluster["server"].rstrip("/")
+    expected_endpoint = config["cluster_endpoint"].rstrip("/")
+    if current_endpoint != expected_endpoint:
         raise ValueError(
             "Kubernetes context does not match this Terraform stack; nothing was applied"
         )
-    if clusters[0]["cluster"].get("insecure-skip-tls-verify"):
+    if current_cluster.get("insecure-skip-tls-verify"):
         raise ValueError("Kubernetes API TLS verification must stay enabled")
 
 
@@ -240,10 +245,12 @@ def assert_certificate(config, cert, services):
     """Require an issued certificate that covers every selected hostname."""
     if cert["Status"] != "ISSUED":
         raise ValueError("The selected ACM certificate is not issued")
-    names = set(cert.get("SubjectAlternativeNames", [])) | {cert["DomainName"]}
+    names = list(cert.get("SubjectAlternativeNames", []))
+    names.append(cert["DomainName"])
     for key in services:
         host = config["hosts"][key]
-        if host not in names and "*." + host.split(".", 1)[1] not in names:
+        wildcard = "*." + host.split(".", 1)[1]
+        if host not in names and wildcard not in names:
             raise ValueError(f"The ACM certificate does not cover {host}")
 
 
@@ -263,16 +270,21 @@ def assert_dns_ownership(config, records, services):
     """Leave existing DNS records alone unless this stack owns them."""
     by_name = {}
     for record in records:
-        by_name.setdefault(record["Name"].rstrip("."), []).append(record)
+        name = record["Name"].rstrip(".")
+        if name not in by_name:
+            by_name[name] = []
+        by_name[name].append(record)
     owner = "external-dns/owner=" + config["txt_owner_id"]
     for key in services:
         host = config["hosts"][key]
         ownership = []
         for kind in ("a", "aaaa", "cname"):
             ownership.extend(by_name.get(f"_astra-{kind}.{host}", []))
-        owned = bool(ownership) and all(
-            owns_dns_record(record, owner) for record in ownership
-        )
+        owned = bool(ownership)
+        for record in ownership:
+            if not owns_dns_record(record, owner):
+                owned = False
+                break
         if (by_name.get(host) or ownership) and not owned:
             raise ValueError(
                 f"DNS name is already in use without this stack's ownership: {host}"
@@ -352,9 +364,11 @@ def preflight(config, services, context, run=command):
                 ]
             )
         )
-        if service["spec"].get("type", "ClusterIP") != "ClusterIP" or route[
-            "port"
-        ] not in [p["port"] for p in service["spec"]["ports"]]:
+        ports = []
+        for port in service["spec"]["ports"]:
+            ports.append(port["port"])
+        service_type = service["spec"].get("type", "ClusterIP")
+        if service_type != "ClusterIP" or route["port"] not in ports:
             raise ValueError(
                 f"{key} needs its expected ClusterIP service and port before exposure"
             )
@@ -364,7 +378,11 @@ def preflight(config, services, context, run=command):
                 kube + ["-n", route["namespace"], "get", "secret", secret, "-o", "name"]
             )
     # 4. Check the Cognito return addresses before exposing browser pages.
-    if set(services) - {"inference"} and config["browser_auth"]["type"] == "cognito":
+    browser_services = []
+    for service in services:
+        if service != "inference":
+            browser_services.append(service)
+    if browser_services and config["browser_auth"]["type"] == "cognito":
         parameters = config["browser_auth"]["parameters"]
         # Filter client metadata: never capture or print the client secret.
         client = json.loads(
@@ -382,14 +400,13 @@ def preflight(config, services, context, run=command):
                 ]
             )
         )
-        required = {
-            f"https://{config['hosts'][key]}/oauth2/idpresponse"
-            for key in services
-            if key != "inference"
-        }
-        if not required <= set(
-            client.get("CallbackURLs", [])
-        ) or "code" not in client.get("AllowedOAuthFlows", []):
+        for service in browser_services:
+            callback_url = f"https://{config['hosts'][service]}/oauth2/idpresponse"
+            if callback_url not in client.get("CallbackURLs", []):
+                raise ValueError(
+                    f"Cognito is missing this callback URL: {callback_url}"
+                )
+        if "code" not in client.get("AllowedOAuthFlows", []):
             raise ValueError(
                 "Cognito client needs generated callback URLs and authorization-code flow"
             )

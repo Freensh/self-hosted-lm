@@ -77,7 +77,8 @@ if __name__ == "__main__":
     from release_requests import load_request
 
     request = load_request(args.release_id)
-    response = boto3.client(
-        "sagemaker", region_name="us-east-1"
-    ).start_pipeline_execution(**request_arguments(args.release_id, request))
+    arguments = request_arguments(args.release_id, request)
+    sagemaker = boto3.client("sagemaker", region_name="us-east-1")
+    # ** passes each dictionary entry as a named argument to the AWS SDK.
+    response = sagemaker.start_pipeline_execution(**arguments)
     print(response["PipelineExecutionArn"])

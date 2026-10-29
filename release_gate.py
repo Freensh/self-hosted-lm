@@ -19,7 +19,8 @@ SUBJECT_KEYS = {"manifest_sha256", "runtime_digest", "evalset_sha256", "policy_s
 
 def release_decision(evidence, expected, now=None):
     """Return (allowed, reasons); never promote a file or approve a model."""
-    now = now or datetime.now(timezone.utc)
+    if now is None:
+        now = datetime.now(timezone.utc)
     reasons = []
     if not isinstance(evidence, dict) or not isinstance(expected, dict):
         return False, ["Malformed evidence or expected release"]
@@ -51,4 +52,5 @@ def release_decision(evidence, expected, now=None):
             reasons.append("Evidence expired or missing timezone")
     except (KeyError, TypeError, ValueError, AttributeError):
         reasons.append("Invalid evidence expiry")
-    return not reasons, reasons
+    allowed = len(reasons) == 0
+    return allowed, reasons
