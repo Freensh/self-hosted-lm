@@ -22,7 +22,7 @@ variable "operator_cidr" { type = string }
 variable "gpu_instance_type" { type = string }
 variable "gpu_enabled" {
   type    = bool
-  default = false
+  default = true
 }
 variable "cpu_ami_release" {
   type    = string

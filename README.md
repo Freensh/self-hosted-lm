@@ -16,7 +16,7 @@ Use the focused guides for [application onboarding](docs/application-onboarding.
 
 ![AWS foundation](docs/aws-foundation.png)
 
-The editable diagram is docs/aws-foundation.drawio. EKS CPU workers start as one m6i.large per Availability Zone. GPU workers start disabled. RDS and Redis are separate managed services in private data subnets; MLflow is managed by SageMaker.
+The editable diagram is docs/aws-foundation.drawio. The first Terraform apply creates one m6i.large CPU worker and one GPU worker per Availability Zone. Verify the workers and GPU access before moving to model release and deployment. RDS and Redis are separate managed services in private data subnets; MLflow is managed by SageMaker.
 
 Terraform state stays locally in infra/terraform.tfstate. Keep it and its backup through cleanup. State and plan files can contain credentials and are excluded from Git.
 
