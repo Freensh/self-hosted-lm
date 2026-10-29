@@ -6,14 +6,9 @@ This starter provides the AWS foundation, model intake checker and the PR-to-Sag
 
 The e2e/astra branch is the development test branch. Live AWS validation is in progress; the presence of a configuration file does not mean its deployment has passed.
 
-Python implementations are supplied as repository files. Kubernetes manifests and Helm values are under k8s/. Start with the local environment below, then run the exercise's named script.
+Start by [importing the starter into your own GitHub account](docs/repository-setup.md). Your pull requests, GitHub Actions, AWS OIDC trust and Argo CD deployments must use your imported repository. After the import finishes, get a local working copy of your repository and create the Python environment using that guide.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --requirement requirements.lock
-python -m unittest discover -s tests -v
-```
+Python implementations are supplied as repository files. Kubernetes manifests and Helm values are under k8s/.
 
 Use the focused guides for [application onboarding](docs/application-onboarding.md), [platform verification](docs/acceptance-checks.md), [troubleshooting and recovery](docs/troubleshooting-recovery.md), and [cleanup](docs/cleanup.md).
 
