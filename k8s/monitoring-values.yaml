@@ -1,0 +1,32 @@
+grafana:
+  ingress:
+    enabled: false
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    storageClassName: gp3-encrypted
+    size: 10Gi
+  nodeSelector: {astra/tier: cpu}
+prometheus:
+  ingress:
+    enabled: false
+  prometheusSpec:
+    nodeSelector: {astra/tier: cpu}
+    retention: 7d
+    retentionSize: 40GB
+    podMonitorSelector:
+      matchLabels: {release: monitoring}
+    podMonitorNamespaceSelector: {}
+    serviceMonitorSelector:
+      matchLabels: {release: monitoring}
+    serviceMonitorNamespaceSelector: {}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-encrypted
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests: {storage: 50Gi}

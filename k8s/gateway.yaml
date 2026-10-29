@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: gateway
+data:
+  config.yaml: |
+    model_list:
+      - model_name: astra
+        litellm_params:
+          model: hosted_vllm/astra
+          api_base: http://vllm.llm.svc.cluster.local:8000/v1
+          api_key: os.environ/VLLM_API_KEY
+          timeout: 120
+        model_info:
+          input_cost_per_token: ${INPUT_COST_PER_TOKEN}
+          output_cost_per_token: ${OUTPUT_COST_PER_TOKEN}
+    router_settings:
+      redis_url: os.environ/REDIS_URL
+      num_retries: 0
+    litellm_settings:
+      cache: false
+      drop_params: false
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      database_url: os.environ/DATABASE_URL
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: litellm}
+  template:
+    metadata:
+      labels: {app: litellm}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {astra/tier: cpu}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 2
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app: litellm}
+      containers:
+        - name: gateway
+          image: ${LITELLM_IMAGE}
+          args: [--config, /app/config.yaml, --port, "4000", --num_workers, "1"]
+          envFrom:
+            - secretRef: {name: litellm-env}
+          ports:
+            - {name: http, containerPort: 4000}
+          resources:
+            requests: {cpu: "1", memory: 2Gi}
+            limits: {memory: 4Gi}
+          startupProbe:
+            httpGet: {path: /health/readiness, port: http}
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /health/readiness, port: http}
+          livenessProbe:
+            httpGet: {path: /health/liveliness, port: http}
+          volumeMounts:
+            - {name: config, mountPath: /app/config.yaml, subPath: config.yaml}
+      volumes:
+        - name: config
+          configMap: {name: litellm-config}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: gateway
+spec:
+  type: ClusterIP
+  selector: {app: litellm}
+  ports:
+    - {name: http, port: 4000, targetPort: http}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: litellm
+  namespace: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: litellm}

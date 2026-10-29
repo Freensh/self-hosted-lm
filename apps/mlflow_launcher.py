@@ -1,0 +1,22 @@
+import os
+import boto3
+from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+
+app = FastAPI()
+sagemaker = boto3.client("sagemaker", region_name="us-east-1")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.get("/")
+def launch():
+    # Deploy only behind the authenticated ALB and restricted target network.
+    result = sagemaker.create_presigned_mlflow_tracking_server_url(
+        TrackingServerName=os.environ["MLFLOW_TRACKING_SERVER_NAME"],
+        ExpiresInSeconds=60,
+        SessionExpirationDurationInSeconds=1800,
+    )
+    return RedirectResponse(result["AuthorizedUrl"], status_code=303,
+                            headers={"Cache-Control": "no-store"})

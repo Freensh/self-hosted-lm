@@ -1,0 +1,34 @@
+name              = "astra"
+azs               = ["us-east-1a", "us-east-1b"]
+operator_role_arn = "arn:aws:iam::REPLACE_ACCOUNT_ID:role/REPLACE_OPERATOR_ROLE"
+operator_cidr     = "REPLACE_PRIVATE_OPERATOR_CIDR"
+gpu_instance_type = "REPLACE_WITH_REVIEWED_GPU_INSTANCE_TYPE"
+gpu_enabled       = false
+domain_name         = "example.com"
+public_client_cidrs = ["203.0.113.10/32"] # Replace with your approved public egress IP.
+# Leave acm_certificate_arn unset to select an issued *.domain_name certificate.
+# Or set acm_certificate_arn to your existing us-east-1 certificate ARN.
+# route53_zone_id = "REPLACE_ZONE_ID" # Only needed to select between duplicate zones.
+
+# Override any label here. Omitted labels keep these defaults.
+subdomains = {
+  inference     = "astra"
+  litellm       = "litellm"
+  argocd        = "argocd"
+  mlflow        = "mlflow"
+  k8s_assistant = "k8sassistant"
+  aws_assistant = "awsassistant"
+  grafana       = "grafana"
+}
+
+# Cognito is created automatically. Only administrators can create users.
+create_cognito = true
+# To use an existing approved provider, set create_cognito = false and browser_auth.
+# browser_auth = {
+#   type = "cognito"
+#   parameters = {
+#     userPoolARN      = "arn:aws:cognito-idp:us-east-1:123456789012:userpool/REPLACE_POOL"
+#     userPoolClientID = "REPLACE_CLIENT_ID"
+#     userPoolDomain   = "REPLACE_COGNITO_DOMAIN_PREFIX"
+#   }
+# }

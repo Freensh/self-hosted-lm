@@ -1,0 +1,161 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vllm
+  namespace: llm
+  annotations:
+    eks.amazonaws.com/role-arn: ${SERVING_ROLE_ARN}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: llm
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 3600
+  strategy:
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels: {app: vllm}
+  template:
+    metadata:
+      labels: {app: vllm, release: "${RELEASE_ID}"}
+    spec:
+      serviceAccountName: vllm
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      nodeSelector: {astra/tier: gpu}
+      tolerations:
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: 2
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app: vllm}
+      initContainers:
+        - name: verify-model
+          image: ${LOADER_IMAGE}
+          command: [python, /app/artifact_loader.py]
+          args:
+            - --bucket
+            - ${RELEASE_BUCKET}
+            - --key
+            - ${MANIFEST_KEY}
+            - --version
+            - ${MANIFEST_VERSION}
+            - --sha256
+            - ${MANIFEST_SHA256}
+            - --directory
+            - /models/astra
+          env:
+            - {name: AWS_DEFAULT_REGION, value: us-east-1}
+          resources:
+            requests: {cpu: "1", memory: 2Gi, ephemeral-storage: 60Gi}
+            limits: {memory: 8Gi, ephemeral-storage: 70Gi}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+      containers:
+        - name: vllm
+          image: ${RUNTIME_IMAGE}
+          command: [vllm, serve, /models/astra]
+          args:
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --served-model-name
+            - astra
+            - --max-model-len
+            - "8192"
+            - --max-num-seqs
+            - "8"
+            - --gpu-memory-utilization
+            - "0.85"
+            - --load-format
+            - safetensors
+            - --language-model-only
+            - --enable-auto-tool-choice
+            - --tool-call-parser
+            - qwen3_coder
+            - --reasoning-parser
+            - qwen3
+            - --default-chat-template-kwargs
+            - '{"enable_thinking": false}'
+          env:
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef: {name: vllm-key, key: api-key}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: HF_HUB_DISABLE_TELEMETRY, value: "1"}
+            - {name: VLLM_NO_USAGE_STATS, value: "1"}
+            - {name: DO_NOT_TRACK, value: "1"}
+          ports:
+            - {name: http, containerPort: 8000}
+          resources:
+            requests: {cpu: "3", memory: 24Gi, nvidia.com/gpu: "1"}
+            limits: {memory: 32Gi, nvidia.com/gpu: "1"}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 15
+            failureThreshold: 160
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 30
+          volumeMounts:
+            - {name: models, mountPath: /models, readOnly: true}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: models
+          emptyDir: {sizeLimit: 70Gi}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: llm
+spec:
+  selector: {app: vllm}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vllm
+  namespace: llm
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: vllm}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vllm-ingress
+  namespace: llm
+spec:
+  podSelector:
+    matchLabels: {app: vllm}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: gateway}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: monitoring}
+      ports:
+        - {protocol: TCP, port: 8000}

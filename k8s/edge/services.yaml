@@ -1,0 +1,44 @@
+# Kubernetes destinations. Hostnames come only from Terraform outputs.
+inference:
+  namespace: gateway
+  service: litellm
+  port: 4000
+  path: /v1
+  health_path: /health/readiness
+litellm:
+  namespace: gateway
+  service: litellm
+  port: 4000
+  path: /
+  health_path: /health/readiness
+argocd:
+  namespace: argocd
+  service: argocd-server
+  port: 443
+  protocol: HTTPS
+  path: /
+  health_path: /healthz
+mlflow:
+  namespace: mlflow
+  service: mlflow-launcher
+  port: 8000
+  path: /
+  health_path: /health
+k8s_assistant:
+  namespace: k8s-assistant
+  service: k8s-assistant
+  port: 8000
+  path: /
+  health_path: /health
+aws_assistant:
+  namespace: aws-assistant
+  service: aws-assistant
+  port: 8000
+  path: /
+  health_path: /health
+grafana:
+  namespace: monitoring
+  service: monitoring-grafana
+  port: 80
+  path: /
+  health_path: /api/health

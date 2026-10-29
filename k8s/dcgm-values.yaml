@@ -1,0 +1,8 @@
+nodeSelector: {astra/tier: gpu}
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+serviceMonitor:
+  enabled: true
+  additionalLabels: {release: monitoring}

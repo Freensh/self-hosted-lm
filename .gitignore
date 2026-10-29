@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.terraform/
+*.tfstate
+*.tfstate.*
+*.plan
+terraform.tfvars
+foundation-outputs.json
+astra-candidate.json
+.env
+*.pem
+*.key
+evidence/
+k8s/generated/
+domain-configuration.json
